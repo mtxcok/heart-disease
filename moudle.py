@@ -1,361 +1,469 @@
-# 导入必要的库
-
 import pandas as pd
-
-import numpy as np
 
 import matplotlib.pyplot as plt
 
 import seaborn as sns
 
-from scipy import stats
-
-from sklearn.preprocessing import StandardScaler
-
-from sklearn.decomposition import PCA
-
 from sklearn.model_selection import train_test_split
+
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+
+from sklearn.impute import SimpleImputer
+
+from ucimlrepo import fetch_ucirepo
 
 from sklearn.ensemble import RandomForestClassifier
 
 from sklearn.svm import SVC
 
-from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
 
-from sklearn.impute import SimpleImputer
+from sklearn.metrics import precision_score, recall_score, f1_score
 
-from sklearn.preprocessing import LabelEncoder
-
-from ucimlrepo import fetch_ucirepo
+import numpy as np
 
   
 
-# 在导入库后添加
+# 设置绘图风格
 
-import matplotlib.pyplot as plt
+sns.set(style="whitegrid")
 
-plt.rcParams['font.sans-serif'] = ['Microsoft YaHei']  # 使用微软雅黑字体
-
-plt.rcParams['axes.unicode_minus'] = False  # 正确显示负号
+plt.rcParams['figure.figsize'] = (10, 6)
 
   
 
-# 1. 数据加载
+# 获取数据集
 
 heart_disease = fetch_ucirepo(id=45)
 
-data = pd.DataFrame(heart_disease.data.features)
+  
 
-data['HeartDisease'] = heart_disease.data.targets
+# 获取特征和目标
+
+X = heart_disease.data.features
+
+y = heart_disease.data.targets.values.flatten()  # 直接转换为一维numpy数组
 
   
 
-# 2. 数据概览
+# 转换为DataFrame和Series
 
-print("数据集列名：", data.columns.tolist())
+X = pd.DataFrame(X, columns=heart_disease.feature_names)
 
-print("\n数据预览：")
-
-print(data.head())
-
-print("\n数据信息：")
-
-print(data.info())
-
-print("\n数据描述：")
-
-print(data.describe())
+y = pd.DataFrame(y).iloc[:, 0]  # 直接取第一列作为Series
 
   
 
-# 3. 特征描述与统计分析
+# 检查数据加载是否成功
 
-continuous_vars = ['age', 'trestbps', 'chol', 'thalach', 'oldpeak']
+print("\n数据加载检查：")
 
-mean_values = data[continuous_vars].mean()
+print("X形状:", X.shape)
 
-variance_values = data[continuous_vars].var()
+print("y形状:", y.shape)
 
-print("均值:\n", mean_values)
-
-print("\n方差:\n", variance_values)
+print("y的前几个值:", y[:5])
 
   
 
-# 绘制箱线图
+# 查看数据集的一部分
 
-plt.figure(figsize=(15, 10))
+print(X.head())
 
-for i, var in enumerate(continuous_vars):
+  
 
-    plt.subplot(2, 3, i+1)
+# 检查 y 的信息
 
-    sns.boxplot(y=data[var])
+print("\nInformation about y:")
 
-    plt.title(f'Boxplot of {var}')
+print(y.info())
 
-plt.tight_layout()
+print(f"Unique values in y: {y.unique()}")
+
+  
+
+# 1. 数据可视化
+
+  
+
+## 1.1. 查看特征的基本信息
+
+print("\nDataset Information:")
+
+print(X.info())
+
+  
+
+## 1.2. 绘制特征的分布图
+
+print("\nPlotting feature distributions...")
+
+X.hist(bins=30, figsize=(20, 15))
+
+plt.suptitle("Feature Distributions")
+
+plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # 调整布局以为总标题留出空间
 
 plt.show()
 
   
 
-# 正态性检验
+## 1.3. 查看目标变量的分布
 
-for var in continuous_vars:
+print("\nPlotting target variable distribution...")
 
-    stat, p = stats.shapiro(data[var])
+sns.countplot(x=y)
 
-    print(f'{var}: Statistics={stat:.3f}, p={p:.3f}')
+plt.title("Target Variable Distribution")
 
-    if p > 0.05:
+plt.xlabel("Target")
 
-        print(f'{var} 数据可能服从正态分布。\n')
+plt.ylabel("Count")
 
-    else:
-
-        print(f'{var} 数据不服从正态分布。\n')
+plt.show()
 
   
 
-# t检验
+## 1.4. 绘制相关性热图
 
-group0 = data[data['HeartDisease'] == 0]
+print("\nPlotting correlation heatmap...")
 
-group1 = data[data['HeartDisease'] == 1]
+# 合并特征和目标以计算相关性
 
-for var in continuous_vars:
+data = X.copy()
 
-    stat, p = stats.ttest_ind(group0[var], group1[var], equal_var=False)
+data['target'] = y
 
-    print(f'{var}: t-statistic={stat:.3f}, p-value={p:.3f}')
-
-    if p < 0.05:
-
-        print(f'{var} 在两组之间存在显著差异。\n')
-
-    else:
-
-        print(f'{var} 在两组之间不存在显著差异。\n')
+corr_matrix = data.corr()
 
   
 
-# 4. 数据预处理
+# 绘热图
+
+plt.figure(figsize=(12, 10))
+
+sns.heatmap(corr_matrix, annot=True, fmt=".2f", cmap='coolwarm')
+
+plt.title("Feature Correlation Heatmap")
+
+plt.show()
 
   
 
-# 检查缺失值
+## 1.5. 绘制特征与目标的关系图
 
-print("缺失值统计：")
+print("\nPlotting relationship between features and target...")
 
-print(data.isnull().sum())
+# 选择与目标变量相关性较高的前几项特征
+
+top_features = corr_matrix['target'].abs().sort_values(ascending=False).index[1:6]
 
   
 
-# 使用SimpleImputer处理缺失值
+for feature in top_features:
+
+    # 检查 y 和 data[feature] 的长度是否一致
+
+    if len(y) != len(data[feature]):
+
+        print(f"Length mismatch: y length {len(y)}, {feature} length {len(data[feature])}")
+
+        continue  # 跳过这个特征
+
+  
+
+    # 检查 y 是否为分类变量
+
+    if y.dtype not in ['object', 'category']:
+
+        # 将 y 转换为字符串类型
+
+        y_plot = y.astype(str)
+
+    else:
+
+        y_plot = y
+
+  
+
+    # 检查是否存在缺失值
+
+    if y_plot.isnull().sum() > 0 or data[feature].isnull().sum() > 0:
+
+        # 删除 'target' 或该特征中包含缺失值的行
+
+        data_clean = data.dropna(subset=['target', feature])
+
+        y_clean = data_clean['target'].astype(str)
+
+        feature_clean = data_clean[feature]
+
+    else:
+
+        y_clean = y_plot
+
+        feature_clean = data[feature]
+
+  
+
+    plt.figure(figsize=(8, 6))
+
+    sns.boxplot(x=y_clean, y=feature_clean)
+
+    plt.title(f"Relationship between {feature} and Target Variable")
+
+    plt.xlabel("Target")
+
+    plt.ylabel(feature)
+
+    plt.show()
+
+  
+
+# 2. 数据预处理
+
+  
+
+# 2.1. 检查缺失值情况
+
+print("\n特征中的缺失值数量：")
+
+print(X.isnull().sum())
+
+print("\n目标变量中的缺失值数量：", y.isnull().sum())
+
+  
+
+# 2.2. 处理特征X中的缺失值
+
+# 使用 SimpleImputer 来填充缺失值（均值）
 
 imputer = SimpleImputer(strategy='mean')
 
-# 对连续变量使用均值填充
-
-data[continuous_vars] = imputer.fit_transform(data[continuous_vars])
-
-# 对ca和thal列单独处理
-
-data['ca'] = SimpleImputer(strategy='mean').fit_transform(data[['ca']])
-
-data['thal'] = SimpleImputer(strategy='most_frequent').fit_transform(data[['thal']])
+X = pd.DataFrame(imputer.fit_transform(X), columns=X.columns)
 
   
 
-# 再次检查确保没有缺失值
+# 2.3. 处理目标变量y中的缺失值（如果有的话）
 
-print("\n处理后的缺失值统计：")
+print("\n目标变量y的基本信息：")
 
-print(data.isnull().sum())
+print("形状:", y.shape)
 
-  
+print("数据类型:", y.dtype)
 
-# 异常值处理
+print("唯一值:", y.unique())
 
-for var in continuous_vars:
-
-    Q1 = data[var].quantile(0.25)
-
-    Q3 = data[var].quantile(0.75)
-
-    IQR = Q3 - Q1
-
-    lower = Q1 - 1.5 * IQR
-
-    upper = Q3 + 1.5 * IQR
-
-    print(f'{var}: 下限={lower}, 上限={upper}')
-
-    data = data[(data[var] >= lower) & (data[var] <= upper)]
+print("缺失值数量:", y.isnull().sum())
 
   
 
-# 数据标准化
+# 确保y是一维数组
+
+if isinstance(y, pd.DataFrame):
+
+    y = y.squeeze()  # 如果y是DataFrame，转换为Series
+
+if isinstance(y, pd.Series):
+
+    y = y.to_numpy()  # 转换为numpy数组
+
+  
+
+# 检查y是否为空
+
+if len(y) == 0:
+
+    raise ValueError("目标变量y是空的！请检查数据加载步骤。")
+
+  
+
+# 2.4. 对分类特征进行编码
+
+categorical_features = ['sex', 'cp', 'fbs', 'restecg', 'exang', 'slope', 'thal']
+
+for feature in categorical_features:
+
+    if feature in X.columns:
+
+        label_encoder = LabelEncoder()
+
+        X[feature] = label_encoder.fit_transform(X[feature])
+
+  
+
+# 2.5. 标准化数据
 
 scaler = StandardScaler()
 
-data[continuous_vars] = scaler.fit_transform(data[continuous_vars])
+X_scaled = scaler.fit_transform(X)
 
   
 
-# 编码分类变量
+# 打印处理后的信息
 
-categorical_vars = ['cp', 'restecg', 'slope', 'thal']
+print("\n数据预处理完成。")
 
-data = pd.get_dummies(data, columns=categorical_vars, drop_first=True)
+print("处理后的X形状：", X.shape)
 
-  
-
-print("\n处理后的数据预览：")
-
-print(data.head())
+print("处理后的y形状：", y.shape)
 
   
 
-# 5. 降维技术
+# 3. 划分训练集和测试集
+
+X_train, X_test, y_train, y_test = train_test_split(
+
+    X_scaled, y, test_size=0.2, random_state=42
+
+)
 
   
 
-# 分离特征和目标变量
-
-X = data.drop('HeartDisease', axis=1)
-
-y = data['HeartDisease']
+# 4. 模型搭建
 
   
 
-# PCA
+# 4.1 随机森林模型
 
-pca = PCA(n_components=0.90)
-
-X_pca = pca.fit_transform(X)
-
-print(f'原始维度: {X.shape}')
-
-print(f'降维后维度: {X_pca.shape}')
-
-  
-
-# 绘制累计方差贡献率
-
-plt.figure(figsize=(8,6))
-
-plt.plot(np.cumsum(pca.explained_variance_ratio_), marker='o')
-
-plt.xlabel('Number of Components')
-
-plt.ylabel('Cumulative Explained Variance Ratio')
-
-plt.title('PCA Cumulative Explained Variance Ratio')
-
-plt.grid(True)
-
-plt.show()
-
-  
-
-# 6. 模型构建
-
-  
-
-# 数据集划分
-
-X_train, X_test, y_train, y_test = train_test_split(X_pca, y, test_size=0.2, random_state=42, stratify=y)
-
-print(f'训练集样本数: {X_train.shape[0]}')
-
-print(f'测试集样本数: {X_test.shape[0]}')
-
-  
-
-# 随机森林模型
+print("\n训练随机森林模型...")
 
 rf_model = RandomForestClassifier(
 
-    n_estimators=200,
+    n_estimators=200,      # 树的数量
 
-    max_depth=15,
+    max_depth=15,          # 树的最大深度
 
-    min_samples_split=4,
+    min_samples_split=4,   # 分裂节点所需的最小样本数
 
-    min_samples_leaf=2,
+    min_samples_leaf=2,    # 叶节点所需的最小样本数
 
-    random_state=42,
+    random_state=42,       # 随机种子
 
-    n_jobs=-1,
+    n_jobs=-1,            # 使用所有CPU核心
 
-    class_weight='balanced'
+    class_weight='balanced'  # 处理类别不平衡
 
 )
+
+  
+
+# 训练模型
 
 rf_model.fit(X_train, y_train)
 
   
 
-# 随机森林评估
+# 预测
 
 y_pred_rf = rf_model.predict(X_test)
 
-print("随机森林混淆矩阵:")
+  
+
+# 评估随机森林模型
+
+print("\n随机森林模型评估结果：")
+
+print("混淆矩阵:")
 
 print(confusion_matrix(y_test, y_pred_rf))
 
-print("\n随机森林分类报告:")
+print("\n分类报告:")
 
 print(classification_report(y_test, y_pred_rf, zero_division=0))
 
-print(f'随机森林准确率: {accuracy_score(y_test, y_pred_rf):.2f}')
+print(f'准确率: {accuracy_score(y_test, y_pred_rf):.2f}')
 
-print(f'随机森林精确率(macro): {precision_score(y_test, y_pred_rf, average="macro", zero_division=0):.2f}')
+print(f'精确率(macro): {precision_score(y_test, y_pred_rf, average="macro", zero_division=0):.2f}')
 
-print(f'随机森林召回率(macro): {recall_score(y_test, y_pred_rf, average="macro", zero_division=0):.2f}')
+print(f'召回率(macro): {recall_score(y_test, y_pred_rf, average="macro", zero_division=0):.2f}')
 
-print(f'随机森林F1分数(macro): {f1_score(y_test, y_pred_rf, average="macro", zero_division=0):.2f}')
+print(f'F1分数(macro): {f1_score(y_test, y_pred_rf, average="macro", zero_division=0):.2f}')
 
   
 
-# 支持向量机模型
+# 4.2 SVM模型
+
+print("\n训练SVM模型...")
 
 svm_model = SVC(
 
-    kernel='rbf',
+    kernel='rbf',          # 使用RBF核函数
 
-    C=1.0,
+    C=1.0,                # 正则参数
 
-    gamma='scale',
+    gamma='scale',        # 核函数系数
 
-    random_state=42,
+    random_state=42,      # 随机种子
 
-    class_weight='balanced'
+    class_weight='balanced'  # 处理类别不平衡
 
 )
+
+  
+
+# 训练模型
 
 svm_model.fit(X_train, y_train)
 
   
 
-# SVM评估
+# 预测
 
 y_pred_svm = svm_model.predict(X_test)
 
-print("\nSVM混淆矩阵:")
+  
+
+# 评估SVM模型
+
+print("\nSVM模型评估结果：")
+
+print("混淆矩阵:")
 
 print(confusion_matrix(y_test, y_pred_svm))
 
-print("\nSVM分类报告:")
+print("\n分类报告:")
 
 print(classification_report(y_test, y_pred_svm, zero_division=0))
 
-print(f'SVM准确率: {accuracy_score(y_test, y_pred_svm):.2f}')
+print(f'准确率: {accuracy_score(y_test, y_pred_svm):.2f}')
 
-print(f'SVM精确率(macro): {precision_score(y_test, y_pred_svm, average="macro", zero_division=0):.2f}')
+print(f'精确率(macro): {precision_score(y_test, y_pred_svm, average="macro", zero_division=0):.2f}')
 
-print(f'SVM召回率(macro): {recall_score(y_test, y_pred_svm, average="macro", zero_division=0):.2f}')
+print(f'召回率(macro): {recall_score(y_test, y_pred_svm, average="macro", zero_division=0):.2f}')
 
-print(f'SVM F1分数(macro): {f1_score(y_test, y_pred_svm, average="macro", zero_division=0):.2f}')
+print(f'F1分数(macro): {f1_score(y_test, y_pred_svm, average="macro", zero_division=0):.2f}')
+
+  
+
+# 4.3 特征重要性分析（随机森林）
+
+feature_importance = pd.DataFrame({
+
+    'feature': X.columns,
+
+    'importance': rf_model.feature_importances_
+
+})
+
+feature_importance = feature_importance.sort_values('importance', ascending=False)
+
+  
+
+plt.figure(figsize=(10, 6))
+
+sns.barplot(x='importance', y='feature', data=feature_importance)
+
+plt.title('Feature Importance (Random Forest)')
+
+plt.show()
+
+  
+
+print("\ny的信息：")
+
+print("类型:", type(y))
+
+print("形状:", y.shape if hasattr(y, 'shape') else len(y))
+
+print("前几个值:", y[:5])
